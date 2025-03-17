@@ -427,33 +427,4 @@ class TrainerWorkloadServiceTest {
 		assertNotNull(oldMonthWorkload);
 		assertEquals(100, oldMonthWorkload.getSummaryDuration());
 	}
-
-	@Test
-	void fallbackProcessTrainerWorkload_ShouldNotThrowException() {
-		// Arrange
-		Exception exception = new RuntimeException("Test exception");
-
-		// Act & Assert - should not throw any exception
-		assertDoesNotThrow(() -> trainerWorkloadService.fallbackProcessTrainerWorkload(command, exception));
-	}
-
-	@Test
-	void fallbackGetTrainerMonthlyWorkload_ShouldReturnEmptyWorkload() {
-		// Arrange
-		Exception exception = new RuntimeException("Test exception");
-
-		// Act
-		TrainerMonthlyWorkload result = trainerWorkloadService.fallbackGetTrainerMonthlyWorkload(username, year, month,
-		        transactionId, exception);
-
-		// Assert
-		assertNotNull(result);
-		assertEquals(username, result.getUsername());
-		assertNull(result.getFirstName());
-		assertNull(result.getLastName());
-		assertNull(result.getIsActive());
-		assertEquals(year, result.getYear());
-		assertEquals(month, result.getMonth());
-		assertEquals(0, result.getSummaryDuration());
-	}
 }

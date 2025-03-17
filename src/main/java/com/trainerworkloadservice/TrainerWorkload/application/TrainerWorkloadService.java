@@ -11,7 +11,6 @@ import com.trainerworkloadservice.TrainerWorkload.domain.MonthWorkload;
 import com.trainerworkloadservice.TrainerWorkload.domain.TrainerMonthlyWorkload;
 import com.trainerworkloadservice.TrainerWorkload.domain.TrainerWorkload;
 import com.trainerworkloadservice.TrainerWorkload.domain.YearWorkload;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import java.time.LocalDate;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +26,6 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 	private final TrainerWorkloadFactory trainerWorkloadFactory;
 
 	@Override
-	@CircuitBreaker(name = "trainerWorkloadService",fallbackMethod = "fallbackProcessTrainerWorkload")
 	public void processTrainerWorkload(ProcessTrainerWorkloadCommand command) {
 		log.debug("Transaction [{}]: Processing trainer workload for username: {}", command.getTransactionId(),
 		        command.getUsername());
@@ -90,7 +88,6 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 	}
 
 	@Override
-	@CircuitBreaker(name = "trainerWorkloadService",fallbackMethod = "fallbackGetTrainerMonthlyWorkload")
 	public TrainerMonthlyWorkload loadTrainerMonthlyWorkload(String username, int year, int month,
 	        String transactionId) {
 		log.debug("Transaction [{}]: Getting monthly workload for trainer: {}, year: {}, month: {}", transactionId,
@@ -131,22 +128,6 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 		        "Transaction [{}]: Monthly workload retrieved successfully for trainer: {}, year: {}, month: {}, duration: {}",
 		        transactionId, username, year, month, summaryDuration);
 		return response;
-	}
-
-	// Fallback method for processTrainerWorkload
-	public void fallbackProcessTrainerWorkload(ProcessTrainerWorkloadCommand command, Throwable t) {
-		log.error(
-		        "Transaction [{}]: Circuit breaker triggered for processTrainerWorkload. Failed to process workload for username: {}. Error: {}",
-		        command.getTransactionId(), command.getUsername(), t.getMessage());
-	}
-
-	// Fallback method for loadTrainerMonthlyWorkload
-	public TrainerMonthlyWorkload fallbackGetTrainerMonthlyWorkload(String username, int year, int month,
-	        String transactionId, Throwable t) {
-		log.error(
-		        "Transaction [{}]: Circuit breaker triggered for loadTrainerMonthlyWorkload. Failed to retrieve workload for username: {}. Error: {}",
-		        transactionId, username, t.getMessage());
-		return TrainerMonthlyWorkload.builder().username(username).year(year).month(month).summaryDuration(0).build();
 	}
 
 	private YearWorkload findOrCreateYearWorkload(TrainerWorkload trainerWorkload, int year) {
