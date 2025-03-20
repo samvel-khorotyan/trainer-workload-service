@@ -30,61 +30,13 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 		log.debug("Transaction [{}]: Processing trainer workload for username: {}", command.getTransactionId(),
 		        command.getUsername());
 
-		LocalDate trainingDate = command.getTrainingDate();
-		int year = trainingDate.getYear();
-		int month = trainingDate.getMonthValue();
-		int duration = command.getTrainingDuration();
+		TrainerWorkload trainerWorkload = getOrCreateTrainerWorkload(command);
+		updateTrainerPersonalInfo(trainerWorkload, command);
+		updateTrainerWorkloadDuration(trainerWorkload, command);
 
-		TrainerWorkload trainerWorkload;
-
-		try {
-			trainerWorkload = loadTrainerWorkloadPort.findByUsername(command.getUsername());
-			log.debug("Transaction [{}]: Existing trainer workload found for username: {}", command.getTransactionId(),
-			        command.getUsername());
-		} catch (TrainerWorkloadNotFoundException e) {
-			trainerWorkload = trainerWorkloadFactory.createFrom(command);
-			log.info("Transaction [{}]: Created new trainer workload for username: {}", command.getTransactionId(),
-			        command.getUsername());
-		}
-
-		// Update trainer info
-		trainerWorkload.setFirstName(command.getFirstName());
-		trainerWorkload.setLastName(command.getLastName());
-		trainerWorkload.setIsActive(command.getIsActive());
-
-		// Find or create year workload
-		YearWorkload yearWorkload = findOrCreateYearWorkload(trainerWorkload, year);
-
-		// Find or create month workload
-		MonthWorkload monthWorkload = findOrCreateMonthWorkload(yearWorkload, month);
-
-		// Update summary duration based on action type
-		int currentDuration = monthWorkload.getSummaryDuration();
-		int newDuration;
-
-		switch (command.getActionType()) {
-			case ADD :
-				newDuration = currentDuration + duration;
-				log.debug("Transaction [{}]: Added {} minutes to month {} of year {} for trainer: {}",
-				        command.getTransactionId(), duration, month, year, command.getUsername());
-				break;
-			case DELETE :
-				newDuration = Math.max(0, currentDuration - duration);
-				log.debug(
-				        "Transaction [{}]: Deleted {} minutes from month {} of year {} for trainer: {}. Resulting duration: {}",
-				        command.getTransactionId(), duration, month, year, command.getUsername(), newDuration);
-				break;
-			default :
-				throw new IllegalArgumentException("Unsupported action type: " + command.getActionType());
-		}
-
-		monthWorkload.setSummaryDuration(newDuration);
-
-		// Save updated workload to MongoDB
 		updateTrainerWorkloadPort.save(trainerWorkload);
-		log.info(
-		        "Transaction [{}]: Trainer workload processed successfully for username: {}, action: {}, new duration: {}",
-		        command.getTransactionId(), command.getUsername(), command.getActionType(), newDuration);
+		log.info("Transaction [{}]: Trainer workload processed successfully for username: {}, action: {}",
+		        command.getTransactionId(), command.getUsername(), command.getActionType());
 	}
 
 	@Override
@@ -93,31 +45,87 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 		log.debug("Transaction [{}]: Getting monthly workload for trainer: {}, year: {}, month: {}", transactionId,
 		        username, year, month);
 
-		TrainerWorkload trainerWorkload;
+		TrainerWorkload trainerWorkload = getTrainerWorkloadOrNull(username, transactionId);
+		if (trainerWorkload == null) {
+			return createEmptyMonthlyWorkload(username, year, month);
+		}
+
+		return buildTrainerMonthlyWorkload(trainerWorkload, username, year, month, transactionId);
+	}
+
+	private TrainerWorkload getOrCreateTrainerWorkload(ProcessTrainerWorkloadCommand command) {
 		try {
-			trainerWorkload = loadTrainerWorkloadPort.findByUsername(username);
+			TrainerWorkload existingWorkload = loadTrainerWorkloadPort.findByUsername(command.getUsername());
+			log.debug("Transaction [{}]: Existing trainer workload found for username: {}", command.getTransactionId(),
+			        command.getUsername());
+			return existingWorkload;
+		} catch (TrainerWorkloadNotFoundException e) {
+			TrainerWorkload newWorkload = trainerWorkloadFactory.createFrom(command);
+			log.info("Transaction [{}]: Created new trainer workload for username: {}", command.getTransactionId(),
+			        command.getUsername());
+			return newWorkload;
+		}
+	}
+
+	private void updateTrainerPersonalInfo(TrainerWorkload trainerWorkload, ProcessTrainerWorkloadCommand command) {
+		trainerWorkload.setFirstName(command.getFirstName());
+		trainerWorkload.setLastName(command.getLastName());
+		trainerWorkload.setIsActive(command.getIsActive());
+	}
+
+	private void updateTrainerWorkloadDuration(TrainerWorkload trainerWorkload, ProcessTrainerWorkloadCommand command) {
+		LocalDate trainingDate = command.getTrainingDate();
+		int year = trainingDate.getYear();
+		int month = trainingDate.getMonthValue();
+		int duration = command.getTrainingDuration();
+
+		YearWorkload yearWorkload = findOrCreateYearWorkload(trainerWorkload, year);
+
+		MonthWorkload monthWorkload = findOrCreateMonthWorkload(yearWorkload, month);
+
+		// Calculate new duration based on action type
+		int newDuration = calculateNewDuration(monthWorkload.getSummaryDuration(), duration, command);
+		monthWorkload.setSummaryDuration(newDuration);
+
+		log.debug("Transaction [{}]: Updated duration for month {} of year {} for trainer: {} to {}",
+		        command.getTransactionId(), month, year, command.getUsername(), newDuration);
+	}
+
+	private int calculateNewDuration(int currentDuration, int duration, ProcessTrainerWorkloadCommand command) {
+		switch (command.getActionType()) {
+			case ADD :
+				int newDuration = currentDuration + duration;
+				log.debug("Transaction [{}]: Added {} minutes to current duration {}", command.getTransactionId(),
+				        duration, currentDuration);
+				return newDuration;
+			case DELETE :
+				int reducedDuration = Math.max(0, currentDuration - duration);
+				log.debug("Transaction [{}]: Deleted {} minutes from current duration {}. Resulting duration: {}",
+				        command.getTransactionId(), duration, currentDuration, reducedDuration);
+				return reducedDuration;
+			default :
+				throw new IllegalArgumentException("Unsupported action type: " + command.getActionType());
+		}
+	}
+
+	private TrainerWorkload getTrainerWorkloadOrNull(String username, String transactionId) {
+		try {
+			return loadTrainerWorkloadPort.findByUsername(username);
 		} catch (TrainerWorkloadNotFoundException e) {
 			log.warn("Transaction [{}]: Trainer workload not found for username: {}. Returning empty workload.",
 			        transactionId, username);
-			return TrainerMonthlyWorkload.builder().username(username).year(year).month(month).summaryDuration(0)
-			        .build();
+			return null;
 		}
+	}
 
-		Optional<YearWorkload> yearWorkloadOpt = trainerWorkload.getYears().stream()
-		        .filter(y -> y.getYear().equals(year)).findFirst();
+	private TrainerMonthlyWorkload createEmptyMonthlyWorkload(String username, int year, int month) {
+		return TrainerMonthlyWorkload.builder().username(username).year(year).month(month).summaryDuration(0).build();
+	}
 
-		if (yearWorkloadOpt.isEmpty()) {
-			log.debug("Transaction [{}]: No workload data found for year {} for trainer: {}", transactionId, year,
-			        username);
-			return TrainerMonthlyWorkload.builder().username(username).firstName(trainerWorkload.getFirstName())
-			        .lastName(trainerWorkload.getLastName()).isActive(trainerWorkload.getIsActive()).year(year)
-			        .month(month).summaryDuration(0).build();
-		}
+	private TrainerMonthlyWorkload buildTrainerMonthlyWorkload(TrainerWorkload trainerWorkload, String username,
+	        int year, int month, String transactionId) {
 
-		Optional<MonthWorkload> monthWorkloadOpt = yearWorkloadOpt.get().getMonths().stream()
-		        .filter(m -> m.getMonth().equals(month)).findFirst();
-
-		int summaryDuration = monthWorkloadOpt.map(MonthWorkload::getSummaryDuration).orElse(0);
+		int summaryDuration = findMonthlyWorkloadDuration(trainerWorkload, year, month, transactionId);
 
 		TrainerMonthlyWorkload response = TrainerMonthlyWorkload.builder().username(username)
 		        .firstName(trainerWorkload.getFirstName()).lastName(trainerWorkload.getLastName())
@@ -128,6 +136,23 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 		        "Transaction [{}]: Monthly workload retrieved successfully for trainer: {}, year: {}, month: {}, duration: {}",
 		        transactionId, username, year, month, summaryDuration);
 		return response;
+	}
+
+	private int findMonthlyWorkloadDuration(TrainerWorkload trainerWorkload, int year, int month,
+	        String transactionId) {
+		Optional<YearWorkload> yearWorkloadOpt = trainerWorkload.getYears().stream()
+		        .filter(y -> y.getYear().equals(year)).findFirst();
+
+		if (yearWorkloadOpt.isEmpty()) {
+			log.debug("Transaction [{}]: No workload data found for year {} for trainer: {}", transactionId, year,
+			        trainerWorkload.getUsername());
+			return 0;
+		}
+
+		Optional<MonthWorkload> monthWorkloadOpt = yearWorkloadOpt.get().getMonths().stream()
+		        .filter(m -> m.getMonth().equals(month)).findFirst();
+
+		return monthWorkloadOpt.map(MonthWorkload::getSummaryDuration).orElse(0);
 	}
 
 	private YearWorkload findOrCreateYearWorkload(TrainerWorkload trainerWorkload, int year) {
