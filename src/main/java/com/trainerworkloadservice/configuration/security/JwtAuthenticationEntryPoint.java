@@ -13,8 +13,8 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 
-@Component
 @Slf4j
+@Component
 public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint, Serializable {
 	@Serial
 	private static final long serialVersionUID = -7858869558953243875L;
