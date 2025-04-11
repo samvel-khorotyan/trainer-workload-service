@@ -2,6 +2,7 @@ package com.trainerworkloadservice.TrainerWorkload.adapter.input.consumer.listen
 
 import com.trainerworkloadservice.TrainerWorkload.adapter.output.queue.message.TrainerWorkloadMessage;
 import com.trainerworkloadservice.TrainerWorkload.adapter.output.queue.message.TrainerWorkloadResponseMessage;
+import com.trainerworkloadservice.TrainerWorkload.adapter.output.queue.sender.MessageSender;
 import com.trainerworkloadservice.TrainerWorkload.application.port.input.LoadTrainerMonthlyWorkloadUseCase;
 import com.trainerworkloadservice.TrainerWorkload.application.port.input.ProcessTrainerWorkloadUseCase;
 import com.trainerworkloadservice.TrainerWorkload.domain.ActionType;
@@ -11,16 +12,25 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jms.annotation.JmsListener;
-import org.springframework.jms.core.JmsTemplate;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class TrainerWorkloadMessageListener {
+	private static final String USERNAME_REQUIRED = "Username is required";
+	private static final String ACTION_TYPE_REQUIRED = "Action type is required";
+	private static final String TRAINING_DURATION_NEGATIVE = "Training duration cannot be negative";
+	private static final String TRAINING_DATE_DURATION_REQUIRED = "Training date and duration are required for ADD/UPDATE actions";
+	private static final String YEAR_MONTH_REQUIRED = "Year and month are required for GET action";
+	private static final String DATABASE_ERROR_PREFIX = "Database error: ";
+	private static final String UNEXPECTED_ERROR_PREFIX = "Unexpected error: ";
+	private static final String VALIDATION_ERROR_PREFIX = "Validation error: ";
+	private static final String PROCESSING_ERROR_PREFIX = "Processing error: ";
+
 	private final ProcessTrainerWorkloadUseCase processTrainerWorkloadUseCase;
 	private final LoadTrainerMonthlyWorkloadUseCase loadTrainerMonthlyWorkloadUseCase;
-	private final JmsTemplate jmsTemplate;
+	private final MessageSender messageSender;
 
 	@JmsListener(destination = JmsConfig.TRAINER_WORKLOAD_QUEUE)
 	public void handleWorkloadMessage(TrainerWorkloadMessage message) {
@@ -33,10 +43,10 @@ public class TrainerWorkloadMessageListener {
 			processMessageByActionType(message, transactionId);
 		} catch (IllegalArgumentException e) {
 			log.error("Transaction [{}]: Invalid message: {}", transactionId, e.getMessage());
-			sendToDeadLetterQueue(message, "Validation error: " + e.getMessage());
+			messageSender.sendToDeadLetterQueue(message, VALIDATION_ERROR_PREFIX + e.getMessage());
 		} catch (Exception e) {
 			log.error("Transaction [{}]: Error processing workload message: {}", transactionId, e.getMessage(), e);
-			sendToDeadLetterQueue(message, "Processing error: " + e.getMessage());
+			messageSender.sendToDeadLetterQueue(message, PROCESSING_ERROR_PREFIX + e.getMessage());
 		}
 	}
 
@@ -58,10 +68,8 @@ public class TrainerWorkloadMessageListener {
 			processTrainerWorkloadUseCase.processTrainerWorkload(message.toCommand(transactionId));
 			log.info("Transaction [{}]: Successfully processed workload for trainer: {}", transactionId,
 			        message.getUsername());
-		} catch (DataAccessException e) {
-			handleDataAccessException(message, transactionId, e, "processing");
 		} catch (Exception e) {
-			handleUnexpectedException(message, transactionId, e, "processing");
+			handleException(message, transactionId, e, "processing", true, false);
 		}
 	}
 
@@ -69,12 +77,8 @@ public class TrainerWorkloadMessageListener {
 		try {
 			TrainerMonthlyWorkload workload = loadTrainerMonthlyWorkload(message, transactionId);
 			sendSuccessResponse(workload, transactionId);
-		} catch (DataAccessException e) {
-			handleDataAccessException(message, transactionId, e, "loading");
-			sendErrorResponse(message, transactionId, "Database error: " + e.getMessage());
 		} catch (Exception e) {
-			handleUnexpectedException(message, transactionId, e, "loading");
-			sendErrorResponse(message, transactionId, "Unexpected error: " + e.getMessage());
+			handleException(message, transactionId, e, "loading", false, true);
 		}
 	}
 
@@ -85,7 +89,7 @@ public class TrainerWorkloadMessageListener {
 
 	private void sendSuccessResponse(TrainerMonthlyWorkload workload, String transactionId) {
 		TrainerWorkloadResponseMessage response = createResponseFromWorkload(workload, transactionId);
-		jmsTemplate.convertAndSend(JmsConfig.TRAINER_WORKLOAD_RESPONSE_QUEUE, response);
+		messageSender.sendResponse(response);
 		log.info("Transaction [{}]: Sent workload response for trainer: {}", transactionId, workload.getUsername());
 	}
 
@@ -94,32 +98,36 @@ public class TrainerWorkloadMessageListener {
 		return TrainerWorkloadResponseMessage.builder().username(workload.getUsername())
 		        .firstName(workload.getFirstName()).lastName(workload.getLastName()).isActive(workload.getIsActive())
 		        .year(workload.getYear()).month(workload.getMonth()).summaryDuration(workload.getSummaryDuration())
-		        .transactionId(transactionId).build();
+		        .transactionId(transactionId).error(false).build();
 	}
 
-	private void handleDataAccessException(TrainerWorkloadMessage message, String transactionId, DataAccessException e,
-	        String operation) {
-		log.error("Transaction [{}]: Database error {} workload: {}", transactionId, operation, e.getMessage(), e);
-		if (!ActionType.GET.equals(message.getActionType())) {
-			sendToDeadLetterQueue(message, "Database error: " + e.getMessage());
+	private void handleException(TrainerWorkloadMessage message, String transactionId, Exception e, String operation,
+	        boolean sendToDLQ, boolean sendErrorResponse) {
+		String errorPrefix = e instanceof DataAccessException ? DATABASE_ERROR_PREFIX : UNEXPECTED_ERROR_PREFIX;
+		String errorMessage = errorPrefix + e.getMessage();
+
+		log.error("Transaction [{}]: Error {} workload: {}", transactionId, operation, e.getMessage(), e);
+
+		if (sendToDLQ) {
+			messageSender.sendToDeadLetterQueue(message, errorMessage);
 		}
-	}
 
-	private void handleUnexpectedException(TrainerWorkloadMessage message, String transactionId, Exception e,
-	        String operation) {
-		log.error("Transaction [{}]: Unexpected error {} workload: {}", transactionId, operation, e.getMessage(), e);
-		if (!ActionType.GET.equals(message.getActionType())) {
-			sendToDeadLetterQueue(message, "Unexpected error: " + e.getMessage());
+		if (sendErrorResponse) {
+			sendErrorResponse(message, transactionId, errorMessage);
 		}
 	}
 
 	private void validateMessage(TrainerWorkloadMessage message) {
 		if (message.getUsername() == null || message.getUsername().isEmpty()) {
-			throw new IllegalArgumentException("Username is required");
+			throw new IllegalArgumentException(USERNAME_REQUIRED);
 		}
 
 		if (message.getActionType() == null) {
-			throw new IllegalArgumentException("Action type is required");
+			throw new IllegalArgumentException(ACTION_TYPE_REQUIRED);
+		}
+
+		if (message.getTrainingDuration() != null && message.getTrainingDuration() < 0) {
+			throw new IllegalArgumentException(TRAINING_DURATION_NEGATIVE);
 		}
 
 		validateActionSpecificFields(message);
@@ -128,26 +136,20 @@ public class TrainerWorkloadMessageListener {
 	private void validateActionSpecificFields(TrainerWorkloadMessage message) {
 		if (isModifyingAction(message.getActionType()) && !ActionType.DELETE.equals(message.getActionType())
 		        && (message.getTrainingDate() == null || message.getTrainingDuration() == null)) {
-			throw new IllegalArgumentException("Training date and duration are required for ADD/UPDATE actions");
+			throw new IllegalArgumentException(TRAINING_DATE_DURATION_REQUIRED);
 		}
 
 		if (ActionType.GET.equals(message.getActionType())
 		        && (message.getYear() == null || message.getMonth() == null)) {
-			throw new IllegalArgumentException("Year and month are required for GET action");
+			throw new IllegalArgumentException(YEAR_MONTH_REQUIRED);
 		}
-	}
-
-	private void sendToDeadLetterQueue(TrainerWorkloadMessage message, String errorMessage) {
-		String dlqMessage = String.format("Error: %s, Original message: %s", errorMessage, message);
-		jmsTemplate.convertAndSend(JmsConfig.DEAD_LETTER_QUEUE, dlqMessage);
 	}
 
 	private void sendErrorResponse(TrainerWorkloadMessage message, String transactionId, String errorMessage) {
 		TrainerWorkloadResponseMessage errorResponse = TrainerWorkloadResponseMessage.builder()
-		        .username(message.getUsername()).firstName("Error").lastName(errorMessage).isActive(false)
-		        .year(message.getYear()).month(message.getMonth()).summaryDuration(0).transactionId(transactionId)
-		        .build();
+		        .username(message.getUsername()).year(message.getYear()).month(message.getMonth()).summaryDuration(0)
+		        .transactionId(transactionId).error(true).errorMessage(errorMessage).build();
 
-		jmsTemplate.convertAndSend(JmsConfig.TRAINER_WORKLOAD_RESPONSE_QUEUE, errorResponse);
+		messageSender.sendResponse(errorResponse);
 	}
 }

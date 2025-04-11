@@ -1,7 +1,5 @@
 package com.trainerworkloadservice.TrainerWorkload.adapter.output.queue.message;
 
-import java.io.Serial;
-import java.io.Serializable;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,10 +9,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class TrainerWorkloadResponseMessage implements Serializable {
-	@Serial
-	private static final long serialVersionUID = 1L;
-
+public class TrainerWorkloadResponseMessage {
 	private String username;
 	private String firstName;
 	private String lastName;
@@ -23,4 +18,8 @@ public class TrainerWorkloadResponseMessage implements Serializable {
 	private Integer month;
 	private Integer summaryDuration;
 	private String transactionId;
+
+	@Builder.Default
+	private boolean error = false;
+	private String errorMessage;
 }
