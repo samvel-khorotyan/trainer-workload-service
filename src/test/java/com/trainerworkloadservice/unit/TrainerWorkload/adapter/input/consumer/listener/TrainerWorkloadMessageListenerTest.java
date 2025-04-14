@@ -7,11 +7,11 @@ import static org.mockito.Mockito.*;
 import com.trainerworkloadservice.TrainerWorkload.adapter.input.consumer.listener.TrainerWorkloadMessageListener;
 import com.trainerworkloadservice.TrainerWorkload.adapter.output.queue.message.TrainerWorkloadMessage;
 import com.trainerworkloadservice.TrainerWorkload.adapter.output.queue.message.TrainerWorkloadResponseMessage;
+import com.trainerworkloadservice.TrainerWorkload.adapter.output.queue.sender.MessageSender;
 import com.trainerworkloadservice.TrainerWorkload.application.port.input.LoadTrainerMonthlyWorkloadUseCase;
 import com.trainerworkloadservice.TrainerWorkload.application.port.input.ProcessTrainerWorkloadUseCase;
 import com.trainerworkloadservice.TrainerWorkload.domain.ActionType;
 import com.trainerworkloadservice.TrainerWorkload.domain.TrainerMonthlyWorkload;
-import com.trainerworkloadservice.configuration.messaging.JmsConfig;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.time.LocalDate;
@@ -22,7 +22,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessException;
-import org.springframework.jms.core.JmsTemplate;
 
 @ExtendWith(MockitoExtension.class)
 class TrainerWorkloadMessageListenerTest {
@@ -33,7 +32,7 @@ class TrainerWorkloadMessageListenerTest {
 	private LoadTrainerMonthlyWorkloadUseCase loadTrainerMonthlyWorkloadUseCase;
 
 	@Mock
-	private JmsTemplate jmsTemplate;
+	private MessageSender messageSender;
 
 	@InjectMocks
 	private TrainerWorkloadMessageListener listener;
@@ -64,7 +63,7 @@ class TrainerWorkloadMessageListenerTest {
 		listener.handleWorkloadMessage(message);
 
 		verify(processTrainerWorkloadUseCase).processTrainerWorkload(any());
-		verify(jmsTemplate, never()).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender, never()).sendToDeadLetterQueue(any(), anyString());
 	}
 
 	@Test
@@ -74,7 +73,7 @@ class TrainerWorkloadMessageListenerTest {
 
 		listener.handleWorkloadMessage(message);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender).sendToDeadLetterQueue(eq(message), anyString());
 	}
 
 	@Test
@@ -84,7 +83,7 @@ class TrainerWorkloadMessageListenerTest {
 
 		listener.handleWorkloadMessage(message);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender).sendToDeadLetterQueue(eq(message), anyString());
 	}
 
 	@Test
@@ -95,9 +94,8 @@ class TrainerWorkloadMessageListenerTest {
 
 		listener.handleWorkloadMessage(message);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.TRAINER_WORKLOAD_RESPONSE_QUEUE),
-		        any(TrainerWorkloadResponseMessage.class));
-		verify(jmsTemplate, never()).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender).sendResponse(any(TrainerWorkloadResponseMessage.class));
+		verify(messageSender, never()).sendToDeadLetterQueue(any(), anyString());
 	}
 
 	@Test
@@ -109,9 +107,8 @@ class TrainerWorkloadMessageListenerTest {
 
 		listener.handleWorkloadMessage(message);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.TRAINER_WORKLOAD_RESPONSE_QUEUE),
-		        any(TrainerWorkloadResponseMessage.class));
-		verify(jmsTemplate, never()).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender).sendResponse(any(TrainerWorkloadResponseMessage.class));
+		verify(messageSender, never()).sendToDeadLetterQueue(any(), anyString());
 	}
 
 	@Test
@@ -122,9 +119,8 @@ class TrainerWorkloadMessageListenerTest {
 
 		listener.handleWorkloadMessage(message);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.TRAINER_WORKLOAD_RESPONSE_QUEUE),
-		        any(TrainerWorkloadResponseMessage.class));
-		verify(jmsTemplate, never()).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender).sendResponse(any(TrainerWorkloadResponseMessage.class));
+		verify(messageSender, never()).sendToDeadLetterQueue(any(), anyString());
 	}
 
 	@Test
@@ -133,7 +129,7 @@ class TrainerWorkloadMessageListenerTest {
 
 		listener.handleWorkloadMessage(message);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender).sendToDeadLetterQueue(eq(message), anyString());
 		verify(processTrainerWorkloadUseCase, never()).processTrainerWorkload(any());
 		verify(loadTrainerMonthlyWorkloadUseCase, never()).loadTrainerMonthlyWorkload(anyString(), anyInt(), anyInt(),
 		        anyString());
@@ -161,8 +157,7 @@ class TrainerWorkloadMessageListenerTest {
 
 		method.invoke(listener, message, transactionId);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.TRAINER_WORKLOAD_RESPONSE_QUEUE),
-		        any(TrainerWorkloadResponseMessage.class));
+		verify(messageSender).sendResponse(any(TrainerWorkloadResponseMessage.class));
 	}
 
 	@Test
@@ -223,7 +218,7 @@ class TrainerWorkloadMessageListenerTest {
 
 		method.invoke(listener, message, transactionId);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender).sendToDeadLetterQueue(eq(message), anyString());
 	}
 
 	@Test
@@ -237,7 +232,7 @@ class TrainerWorkloadMessageListenerTest {
 
 		method.invoke(listener, message, transactionId);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender).sendToDeadLetterQueue(eq(message), anyString());
 	}
 
 	@Test
@@ -253,10 +248,7 @@ class TrainerWorkloadMessageListenerTest {
 
     method.invoke(listener, message, transactionId);
 
-    verify(jmsTemplate)
-        .convertAndSend(
-            eq(JmsConfig.TRAINER_WORKLOAD_RESPONSE_QUEUE),
-            any(TrainerWorkloadResponseMessage.class));
+    verify(messageSender).sendResponse(any(TrainerWorkloadResponseMessage.class));
   }
 
 	@Test
@@ -272,10 +264,7 @@ class TrainerWorkloadMessageListenerTest {
 
     method.invoke(listener, message, transactionId);
 
-    verify(jmsTemplate)
-        .convertAndSend(
-            eq(JmsConfig.TRAINER_WORKLOAD_RESPONSE_QUEUE),
-            any(TrainerWorkloadResponseMessage.class));
+    verify(messageSender).sendResponse(any(TrainerWorkloadResponseMessage.class));
   }
 
 	@Test
@@ -291,10 +280,7 @@ class TrainerWorkloadMessageListenerTest {
 
     method.invoke(listener, message, transactionId);
 
-    verify(jmsTemplate)
-        .convertAndSend(
-            eq(JmsConfig.TRAINER_WORKLOAD_RESPONSE_QUEUE),
-            any(TrainerWorkloadResponseMessage.class));
+    verify(messageSender).sendResponse(any(TrainerWorkloadResponseMessage.class));
   }
 
 	@Test
@@ -324,8 +310,7 @@ class TrainerWorkloadMessageListenerTest {
 
 		method.invoke(listener, workload, transactionId);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.TRAINER_WORKLOAD_RESPONSE_QUEUE),
-		        any(TrainerWorkloadResponseMessage.class));
+		verify(messageSender).sendResponse(any(TrainerWorkloadResponseMessage.class));
 	}
 
 	@Test
@@ -352,14 +337,15 @@ class TrainerWorkloadMessageListenerTest {
 		DataAccessException e = new DataAccessException("Database error") {
 		};
 
-		Method method = TrainerWorkloadMessageListener.class.getDeclaredMethod("handleDataAccessException",
-		        TrainerWorkloadMessage.class, String.class, DataAccessException.class, String.class);
+		Method method = TrainerWorkloadMessageListener.class.getDeclaredMethod("handleException",
+		        TrainerWorkloadMessage.class, String.class, Exception.class, String.class, boolean.class,
+		        boolean.class);
 		method.setAccessible(true);
 
 		message.setActionType(ActionType.ADD);
-		method.invoke(listener, message, transactionId, e, "processing");
+		method.invoke(listener, message, transactionId, e, "processing", true, false);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender).sendToDeadLetterQueue(eq(message), anyString());
 	}
 
 	@Test
@@ -367,42 +353,47 @@ class TrainerWorkloadMessageListenerTest {
 		DataAccessException e = new DataAccessException("Database error") {
 		};
 
-		Method method = TrainerWorkloadMessageListener.class.getDeclaredMethod("handleDataAccessException",
-		        TrainerWorkloadMessage.class, String.class, DataAccessException.class, String.class);
+		Method method = TrainerWorkloadMessageListener.class.getDeclaredMethod("handleException",
+		        TrainerWorkloadMessage.class, String.class, Exception.class, String.class, boolean.class,
+		        boolean.class);
 		method.setAccessible(true);
 
 		message.setActionType(ActionType.GET);
-		method.invoke(listener, message, transactionId, e, "loading");
+		method.invoke(listener, message, transactionId, e, "loading", false, true);
 
-		verify(jmsTemplate, never()).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender, never()).sendToDeadLetterQueue(any(), anyString());
+		verify(messageSender).sendResponse(any(TrainerWorkloadResponseMessage.class));
 	}
 
 	@Test
 	void handleUnexpectedException_WithModifyingAction_ShouldSendToDLQ() throws Exception {
 		Exception e = new RuntimeException("Unexpected error");
 
-		Method method = TrainerWorkloadMessageListener.class.getDeclaredMethod("handleUnexpectedException",
-		        TrainerWorkloadMessage.class, String.class, Exception.class, String.class);
+		Method method = TrainerWorkloadMessageListener.class.getDeclaredMethod("handleException",
+		        TrainerWorkloadMessage.class, String.class, Exception.class, String.class, boolean.class,
+		        boolean.class);
 		method.setAccessible(true);
 
 		message.setActionType(ActionType.ADD);
-		method.invoke(listener, message, transactionId, e, "processing");
+		method.invoke(listener, message, transactionId, e, "processing", true, false);
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender).sendToDeadLetterQueue(eq(message), anyString());
 	}
 
 	@Test
 	void handleUnexpectedException_WithGetAction_ShouldNotSendToDLQ() throws Exception {
 		Exception e = new RuntimeException("Unexpected error");
 
-		Method method = TrainerWorkloadMessageListener.class.getDeclaredMethod("handleUnexpectedException",
-		        TrainerWorkloadMessage.class, String.class, Exception.class, String.class);
+		Method method = TrainerWorkloadMessageListener.class.getDeclaredMethod("handleException",
+		        TrainerWorkloadMessage.class, String.class, Exception.class, String.class, boolean.class,
+		        boolean.class);
 		method.setAccessible(true);
 
 		message.setActionType(ActionType.GET);
-		method.invoke(listener, message, transactionId, e, "loading");
+		method.invoke(listener, message, transactionId, e, "loading", false, true);
 
-		verify(jmsTemplate, never()).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
+		verify(messageSender, never()).sendToDeadLetterQueue(any(), anyString());
+		verify(messageSender).sendResponse(any(TrainerWorkloadResponseMessage.class));
 	}
 
 	@Test
@@ -472,17 +463,6 @@ class TrainerWorkloadMessageListenerTest {
 	}
 
 	@Test
-	void sendToDeadLetterQueue_ShouldSendMessage() throws Exception {
-		Method method = TrainerWorkloadMessageListener.class.getDeclaredMethod("sendToDeadLetterQueue",
-		        TrainerWorkloadMessage.class, String.class);
-		method.setAccessible(true);
-
-		method.invoke(listener, message, "Test error");
-
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.DEAD_LETTER_QUEUE), anyString());
-	}
-
-	@Test
 	void sendErrorResponse_ShouldSendErrorResponse() throws Exception {
 		Method method = TrainerWorkloadMessageListener.class.getDeclaredMethod("sendErrorResponse",
 		        TrainerWorkloadMessage.class, String.class, String.class);
@@ -490,7 +470,6 @@ class TrainerWorkloadMessageListenerTest {
 
 		method.invoke(listener, message, transactionId, "Test error");
 
-		verify(jmsTemplate).convertAndSend(eq(JmsConfig.TRAINER_WORKLOAD_RESPONSE_QUEUE),
-		        any(TrainerWorkloadResponseMessage.class));
+		verify(messageSender).sendResponse(any(TrainerWorkloadResponseMessage.class));
 	}
 }

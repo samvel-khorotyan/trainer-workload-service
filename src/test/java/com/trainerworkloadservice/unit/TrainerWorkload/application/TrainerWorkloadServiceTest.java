@@ -69,7 +69,6 @@ class TrainerWorkloadServiceTest {
 
 	@Test
   void processTrainerWorkload_ShouldCreateNewTrainerWorkload_WhenUsernameDoesNotExist() {
-    // Arrange
     when(loadTrainerWorkloadPort.findByUsername(username))
         .thenThrow(new TrainerWorkloadNotFoundException("Not found"));
 
@@ -84,10 +83,8 @@ class TrainerWorkloadServiceTest {
 
     when(trainerWorkloadFactory.createFrom(command)).thenReturn(newTrainerWorkload);
 
-    // Act
     trainerWorkloadService.processTrainerWorkload(command);
 
-    // Assert
     ArgumentCaptor<TrainerWorkload> workloadCaptor = ArgumentCaptor.forClass(TrainerWorkload.class);
     verify(updateTrainerWorkloadPort).save(workloadCaptor.capture());
 
@@ -97,7 +94,6 @@ class TrainerWorkloadServiceTest {
     assertEquals(lastName, savedWorkload.getLastName());
     assertEquals(isActive, savedWorkload.getIsActive());
 
-    // Verify year and month were created
     assertEquals(1, savedWorkload.getYears().size());
     YearWorkload yearWorkload = savedWorkload.getYears().get(0);
     assertEquals(year, yearWorkload.getYear());
@@ -110,23 +106,19 @@ class TrainerWorkloadServiceTest {
 
 	@Test
   void processTrainerWorkload_ShouldUpdateExistingTrainerWorkload_WhenUsernameExists() {
-    // Arrange
     when(loadTrainerWorkloadPort.findByUsername(username)).thenReturn(existingTrainerWorkload);
 
-    // Act
     trainerWorkloadService.processTrainerWorkload(command);
 
-    // Assert
     ArgumentCaptor<TrainerWorkload> workloadCaptor = ArgumentCaptor.forClass(TrainerWorkload.class);
     verify(updateTrainerWorkloadPort).save(workloadCaptor.capture());
 
     TrainerWorkload savedWorkload = workloadCaptor.getValue();
     assertEquals(username, savedWorkload.getUsername());
-    assertEquals(firstName, savedWorkload.getFirstName()); // Should be updated
-    assertEquals(lastName, savedWorkload.getLastName()); // Should be updated
-    assertEquals(isActive, savedWorkload.getIsActive()); // Should be updated
+    assertEquals(firstName, savedWorkload.getFirstName());
+    assertEquals(lastName, savedWorkload.getLastName());
+    assertEquals(isActive, savedWorkload.getIsActive());
 
-    // Verify year and month were created
     assertEquals(1, savedWorkload.getYears().size());
     YearWorkload yearWorkload = savedWorkload.getYears().get(0);
     assertEquals(year, yearWorkload.getYear());
@@ -139,8 +131,6 @@ class TrainerWorkloadServiceTest {
 
 	@Test
 	void processTrainerWorkload_ShouldAddDuration_WhenActionTypeIsAdd() {
-		// Arrange
-		// Create existing workload with existing year and month
 		MonthWorkload existingMonthWorkload = MonthWorkload.builder().month(month).summaryDuration(100).build();
 
 		YearWorkload existingYearWorkload = YearWorkload.builder().year(year)
@@ -150,24 +140,19 @@ class TrainerWorkloadServiceTest {
 
 		when(loadTrainerWorkloadPort.findByUsername(username)).thenReturn(existingTrainerWorkload);
 
-		// Act
-		trainerWorkloadService.processTrainerWorkload(command); // command has ActionType.ADD
+		trainerWorkloadService.processTrainerWorkload(command);
 
-		// Assert
 		ArgumentCaptor<TrainerWorkload> workloadCaptor = ArgumentCaptor.forClass(TrainerWorkload.class);
 		verify(updateTrainerWorkloadPort).save(workloadCaptor.capture());
 
 		TrainerWorkload savedWorkload = workloadCaptor.getValue();
 		MonthWorkload updatedMonthWorkload = savedWorkload.getYears().get(0).getMonths().get(0);
 
-		// Original 100 + new 60 = 160
 		assertEquals(160, updatedMonthWorkload.getSummaryDuration());
 	}
 
 	@Test
 	void processTrainerWorkload_ShouldSubtractDuration_WhenActionTypeIsDelete() {
-		// Arrange
-		// Create existing workload with existing year and month
 		MonthWorkload existingMonthWorkload = MonthWorkload.builder().month(month).summaryDuration(100).build();
 
 		YearWorkload existingYearWorkload = YearWorkload.builder().year(year)
@@ -177,32 +162,24 @@ class TrainerWorkloadServiceTest {
 
 		when(loadTrainerWorkloadPort.findByUsername(username)).thenReturn(existingTrainerWorkload);
 
-		// Change action type to DELETE
 		command = ProcessTrainerWorkloadCommand.builder().username(username).firstName(firstName).lastName(lastName)
 		        .isActive(isActive).trainingDate(trainingDate).trainingDuration(trainingDuration)
 		        .actionType(ActionType.DELETE).transactionId(transactionId).build();
 
-		// Act
 		trainerWorkloadService.processTrainerWorkload(command);
 
-		// Assert
 		ArgumentCaptor<TrainerWorkload> workloadCaptor = ArgumentCaptor.forClass(TrainerWorkload.class);
 		verify(updateTrainerWorkloadPort).save(workloadCaptor.capture());
 
 		TrainerWorkload savedWorkload = workloadCaptor.getValue();
 		MonthWorkload updatedMonthWorkload = savedWorkload.getYears().get(0).getMonths().get(0);
 
-		// Original 100 - new 60 = 40
 		assertEquals(40, updatedMonthWorkload.getSummaryDuration());
 	}
 
 	@Test
 	void processTrainerWorkload_ShouldNotAllowNegativeDuration_WhenDeletingMoreThanExists() {
-		// Arrange
-		// Create existing workload with existing year and month
-		MonthWorkload existingMonthWorkload = MonthWorkload.builder().month(month).summaryDuration(30) // Only 30
-		        // minutes exist
-		        .build();
+		MonthWorkload existingMonthWorkload = MonthWorkload.builder().month(month).summaryDuration(30).build();
 
 		YearWorkload existingYearWorkload = YearWorkload.builder().year(year)
 		        .months(new ArrayList<>(Collections.singletonList(existingMonthWorkload))).build();
@@ -211,29 +188,23 @@ class TrainerWorkloadServiceTest {
 
 		when(loadTrainerWorkloadPort.findByUsername(username)).thenReturn(existingTrainerWorkload);
 
-		// Try to delete 60 minutes when only 30 exist
 		command = ProcessTrainerWorkloadCommand.builder().username(username).firstName(firstName).lastName(lastName)
-		        .isActive(isActive).trainingDate(trainingDate).trainingDuration(trainingDuration) // 60 minutes
+		        .isActive(isActive).trainingDate(trainingDate).trainingDuration(trainingDuration)
 		        .actionType(ActionType.DELETE).transactionId(transactionId).build();
 
-		// Act
 		trainerWorkloadService.processTrainerWorkload(command);
 
-		// Assert
 		ArgumentCaptor<TrainerWorkload> workloadCaptor = ArgumentCaptor.forClass(TrainerWorkload.class);
 		verify(updateTrainerWorkloadPort).save(workloadCaptor.capture());
 
 		TrainerWorkload savedWorkload = workloadCaptor.getValue();
 		MonthWorkload updatedMonthWorkload = savedWorkload.getYears().get(0).getMonths().get(0);
 
-		// Should be 0, not negative
 		assertEquals(0, updatedMonthWorkload.getSummaryDuration());
 	}
 
 	@Test
 	void loadTrainerMonthlyWorkload_ShouldReturnWorkload_WhenDataExists() {
-		// Arrange
-		// Create existing workload with existing year and month
 		MonthWorkload existingMonthWorkload = MonthWorkload.builder().month(month).summaryDuration(120).build();
 
 		YearWorkload existingYearWorkload = YearWorkload.builder().year(year)
@@ -246,11 +217,9 @@ class TrainerWorkloadServiceTest {
 
 		when(loadTrainerWorkloadPort.findByUsername(username)).thenReturn(existingTrainerWorkload);
 
-		// Act
 		TrainerMonthlyWorkload result = trainerWorkloadService.loadTrainerMonthlyWorkload(username, year, month,
 		        transactionId);
 
-		// Assert
 		assertNotNull(result);
 		assertEquals(username, result.getUsername());
 		assertEquals(firstName, result.getFirstName());
@@ -263,19 +232,15 @@ class TrainerWorkloadServiceTest {
 
 	@Test
 	void loadTrainerMonthlyWorkload_ShouldReturnZeroDuration_WhenYearDoesNotExist() {
-		// Arrange
-		// Create existing workload with no years
 		existingTrainerWorkload.setFirstName(firstName);
 		existingTrainerWorkload.setLastName(lastName);
 		existingTrainerWorkload.setIsActive(isActive);
 
 		when(loadTrainerWorkloadPort.findByUsername(username)).thenReturn(existingTrainerWorkload);
 
-		// Act
 		TrainerMonthlyWorkload result = trainerWorkloadService.loadTrainerMonthlyWorkload(username, year, month,
 		        transactionId);
 
-		// Assert
 		assertNotNull(result);
 		assertEquals(username, result.getUsername());
 		assertEquals(firstName, result.getFirstName());
@@ -288,8 +253,6 @@ class TrainerWorkloadServiceTest {
 
 	@Test
 	void loadTrainerMonthlyWorkload_ShouldReturnZeroDuration_WhenMonthDoesNotExist() {
-		// Arrange
-		// Create existing workload with year but no matching month
 		YearWorkload existingYearWorkload = YearWorkload.builder().year(year).months(new ArrayList<>()).build();
 
 		existingTrainerWorkload.setYears(new ArrayList<>(Collections.singletonList(existingYearWorkload)));
@@ -299,11 +262,9 @@ class TrainerWorkloadServiceTest {
 
 		when(loadTrainerWorkloadPort.findByUsername(username)).thenReturn(existingTrainerWorkload);
 
-		// Act
 		TrainerMonthlyWorkload result = trainerWorkloadService.loadTrainerMonthlyWorkload(username, year, month,
 		        transactionId);
 
-		// Assert
 		assertNotNull(result);
 		assertEquals(username, result.getUsername());
 		assertEquals(firstName, result.getFirstName());
@@ -316,15 +277,12 @@ class TrainerWorkloadServiceTest {
 
 	@Test
   void loadTrainerMonthlyWorkload_ShouldReturnEmptyWorkload_WhenTrainerDoesNotExist() {
-    // Arrange
     when(loadTrainerWorkloadPort.findByUsername(username))
         .thenThrow(new TrainerWorkloadNotFoundException("Not found"));
 
-    // Act
     TrainerMonthlyWorkload result =
         trainerWorkloadService.loadTrainerMonthlyWorkload(username, year, month, transactionId);
 
-    // Assert
     assertNotNull(result);
     assertEquals(username, result.getUsername());
     assertNull(result.getFirstName());
@@ -337,30 +295,24 @@ class TrainerWorkloadServiceTest {
 
 	@Test
 	void processTrainerWorkload_ShouldCreateNewYearAndMonth_WhenProcessingForNewPeriod() {
-		// Arrange
-		// Create existing workload with a different year
 		MonthWorkload existingMonthWorkload = MonthWorkload.builder().month(3).summaryDuration(100).build();
 
-		YearWorkload existingYearWorkload = YearWorkload.builder().year(2022) // Different year
+		YearWorkload existingYearWorkload = YearWorkload.builder().year(2022)
 		        .months(new ArrayList<>(Collections.singletonList(existingMonthWorkload))).build();
 
 		existingTrainerWorkload.setYears(new ArrayList<>(Collections.singletonList(existingYearWorkload)));
 
 		when(loadTrainerWorkloadPort.findByUsername(username)).thenReturn(existingTrainerWorkload);
 
-		// Act
-		trainerWorkloadService.processTrainerWorkload(command); // command has year 2023, month 5
+		trainerWorkloadService.processTrainerWorkload(command);
 
-		// Assert
 		ArgumentCaptor<TrainerWorkload> workloadCaptor = ArgumentCaptor.forClass(TrainerWorkload.class);
 		verify(updateTrainerWorkloadPort).save(workloadCaptor.capture());
 
 		TrainerWorkload savedWorkload = workloadCaptor.getValue();
 
-		// Should now have 2 years
 		assertEquals(2, savedWorkload.getYears().size());
 
-		// Find the new year (2023)
 		YearWorkload newYearWorkload = savedWorkload.getYears().stream().filter(y -> y.getYear().equals(year))
 		        .findFirst().orElse(null);
 
@@ -371,7 +323,6 @@ class TrainerWorkloadServiceTest {
 		assertEquals(month, newMonthWorkload.getMonth());
 		assertEquals(trainingDuration, newMonthWorkload.getSummaryDuration());
 
-		// Original year and month should remain unchanged
 		YearWorkload oldYearWorkload = savedWorkload.getYears().stream().filter(y -> y.getYear().equals(2022))
 		        .findFirst().orElse(null);
 
@@ -383,48 +334,109 @@ class TrainerWorkloadServiceTest {
 
 	@Test
 	void processTrainerWorkload_ShouldAddNewMonth_ToExistingYear() {
-		// Arrange
-		// Create existing workload with the same year but different month
-		MonthWorkload existingMonthWorkload = MonthWorkload.builder().month(3) // Different month
-		        .summaryDuration(100).build();
+		MonthWorkload existingMonthWorkload = MonthWorkload.builder().month(3).summaryDuration(100).build();
 
-		YearWorkload existingYearWorkload = YearWorkload.builder().year(year) // Same year as command
+		YearWorkload existingYearWorkload = YearWorkload.builder().year(year)
 		        .months(new ArrayList<>(Collections.singletonList(existingMonthWorkload))).build();
 
 		existingTrainerWorkload.setYears(new ArrayList<>(Collections.singletonList(existingYearWorkload)));
 
 		when(loadTrainerWorkloadPort.findByUsername(username)).thenReturn(existingTrainerWorkload);
 
-		// Act
-		trainerWorkloadService.processTrainerWorkload(command); // command has month 5
+		trainerWorkloadService.processTrainerWorkload(command);
 
-		// Assert
 		ArgumentCaptor<TrainerWorkload> workloadCaptor = ArgumentCaptor.forClass(TrainerWorkload.class);
 		verify(updateTrainerWorkloadPort).save(workloadCaptor.capture());
 
 		TrainerWorkload savedWorkload = workloadCaptor.getValue();
 
-		// Should still have 1 year
 		assertEquals(1, savedWorkload.getYears().size());
 
 		YearWorkload updatedYearWorkload = savedWorkload.getYears().get(0);
 		assertEquals(year, updatedYearWorkload.getYear());
 
-		// Should now have 2 months
 		assertEquals(2, updatedYearWorkload.getMonths().size());
 
-		// Find the new month (5)
 		MonthWorkload newMonthWorkload = updatedYearWorkload.getMonths().stream()
 		        .filter(m -> m.getMonth().equals(month)).findFirst().orElse(null);
 
 		assertNotNull(newMonthWorkload);
 		assertEquals(trainingDuration, newMonthWorkload.getSummaryDuration());
 
-		// Original month should remain unchanged
 		MonthWorkload oldMonthWorkload = updatedYearWorkload.getMonths().stream().filter(m -> m.getMonth().equals(3))
 		        .findFirst().orElse(null);
 
 		assertNotNull(oldMonthWorkload);
 		assertEquals(100, oldMonthWorkload.getSummaryDuration());
 	}
+
+	@Test
+	void processTrainerWorkload_ShouldUpdateDuration_WhenActionTypeIsUpdate() {
+		MonthWorkload existingMonthWorkload = MonthWorkload.builder().month(month).summaryDuration(100).build();
+
+		YearWorkload existingYearWorkload = YearWorkload.builder().year(year)
+		        .months(new ArrayList<>(Collections.singletonList(existingMonthWorkload))).build();
+
+		existingTrainerWorkload.setYears(new ArrayList<>(Collections.singletonList(existingYearWorkload)));
+
+		when(loadTrainerWorkloadPort.findByUsername(username)).thenReturn(existingTrainerWorkload);
+
+		command = ProcessTrainerWorkloadCommand.builder().username(username).firstName(firstName).lastName(lastName)
+		        .isActive(isActive).trainingDate(trainingDate).trainingDuration(trainingDuration)
+		        .actionType(ActionType.UPDATE).transactionId(transactionId).build();
+
+		trainerWorkloadService.processTrainerWorkload(command);
+
+		ArgumentCaptor<TrainerWorkload> workloadCaptor = ArgumentCaptor.forClass(TrainerWorkload.class);
+		verify(updateTrainerWorkloadPort).save(workloadCaptor.capture());
+
+		TrainerWorkload savedWorkload = workloadCaptor.getValue();
+		MonthWorkload updatedMonthWorkload = savedWorkload.getYears().get(0).getMonths().get(0);
+
+		assertEquals(trainingDuration, updatedMonthWorkload.getSummaryDuration());
+	}
+
+	@Test
+  void processTrainerWorkload_ShouldThrowRuntimeException_WhenLoadPortThrowsException() {
+    when(loadTrainerWorkloadPort.findByUsername(username))
+        .thenThrow(new RuntimeException("Database error"));
+
+    assertThrows(
+        RuntimeException.class, () -> trainerWorkloadService.processTrainerWorkload(command));
+  }
+
+	@Test
+  void processTrainerWorkload_ShouldThrowRuntimeException_WhenUpdatePortThrowsException() {
+    when(loadTrainerWorkloadPort.findByUsername(username)).thenReturn(existingTrainerWorkload);
+    doThrow(new RuntimeException("Database error"))
+        .when(updateTrainerWorkloadPort)
+        .save(any(TrainerWorkload.class));
+
+    assertThrows(
+        RuntimeException.class, () -> trainerWorkloadService.processTrainerWorkload(command));
+  }
+
+	@Test
+  void
+      loadTrainerMonthlyWorkload_ShouldThrowRuntimeException_WhenLoadPortThrowsUnexpectedException() {
+    when(loadTrainerWorkloadPort.findByUsername(username))
+        .thenThrow(new RuntimeException("Database error"));
+
+    assertThrows(
+        RuntimeException.class,
+        () ->
+            trainerWorkloadService.loadTrainerMonthlyWorkload(
+                username, year, month, transactionId));
+  }
+
+	@Test
+  void processTrainerWorkload_ShouldThrowRuntimeException_WhenFactoryThrowsException() {
+    when(loadTrainerWorkloadPort.findByUsername(username))
+        .thenThrow(new TrainerWorkloadNotFoundException("Not found"));
+    when(trainerWorkloadFactory.createFrom(command))
+        .thenThrow(new RuntimeException("Factory error"));
+
+    assertThrows(
+        RuntimeException.class, () -> trainerWorkloadService.processTrainerWorkload(command));
+  }
 }

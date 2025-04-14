@@ -16,6 +16,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -26,31 +27,46 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 	private final TrainerWorkloadFactory trainerWorkloadFactory;
 
 	@Override
+	@Transactional
 	public void processTrainerWorkload(ProcessTrainerWorkloadCommand command) {
-		log.debug("Transaction [{}]: Processing trainer workload for username: {}", command.getTransactionId(),
+		String transactionId = command.getTransactionId();
+		log.debug("Transaction [{}]: Processing trainer workload for username: {}", transactionId,
 		        command.getUsername());
 
-		TrainerWorkload trainerWorkload = getOrCreateTrainerWorkload(command);
-		updateTrainerPersonalInfo(trainerWorkload, command);
-		updateTrainerWorkloadDuration(trainerWorkload, command);
+		try {
+			TrainerWorkload trainerWorkload = getOrCreateTrainerWorkload(command);
+			updateTrainerPersonalInfo(trainerWorkload, command);
+			updateTrainerWorkloadDuration(trainerWorkload, command);
 
-		updateTrainerWorkloadPort.save(trainerWorkload);
-		log.info("Transaction [{}]: Trainer workload processed successfully for username: {}, action: {}",
-		        command.getTransactionId(), command.getUsername(), command.getActionType());
+			updateTrainerWorkloadPort.save(trainerWorkload);
+			log.info("Transaction [{}]: Trainer workload processed successfully for username: {}, action: {}",
+			        transactionId, command.getUsername(), command.getActionType());
+		} catch (Exception e) {
+			log.error("Transaction [{}]: Failed to process trainer workload for username: {}, error: {}", transactionId,
+			        command.getUsername(), e.getMessage(), e);
+			throw new RuntimeException("Failed to process trainer workload", e);
+		}
 	}
 
 	@Override
+	@Transactional(readOnly = true)
 	public TrainerMonthlyWorkload loadTrainerMonthlyWorkload(String username, int year, int month,
 	        String transactionId) {
 		log.debug("Transaction [{}]: Getting monthly workload for trainer: {}, year: {}, month: {}", transactionId,
 		        username, year, month);
 
-		TrainerWorkload trainerWorkload = getTrainerWorkloadOrNull(username, transactionId);
-		if (trainerWorkload == null) {
-			return createEmptyMonthlyWorkload(username, year, month);
-		}
+		try {
+			TrainerWorkload trainerWorkload = getTrainerWorkloadOrNull(username, transactionId);
+			if (trainerWorkload == null) {
+				return createEmptyMonthlyWorkload(username, year, month);
+			}
 
-		return buildTrainerMonthlyWorkload(trainerWorkload, username, year, month, transactionId);
+			return buildTrainerMonthlyWorkload(trainerWorkload, username, year, month, transactionId);
+		} catch (Exception e) {
+			log.error("Transaction [{}]: Failed to load monthly workload for trainer: {}, error: {}", transactionId,
+			        username, e.getMessage(), e);
+			throw new RuntimeException("Failed to load trainer monthly workload", e);
+		}
 	}
 
 	private TrainerWorkload getOrCreateTrainerWorkload(ProcessTrainerWorkloadCommand command) {
@@ -60,10 +76,15 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 			        command.getUsername());
 			return existingWorkload;
 		} catch (TrainerWorkloadNotFoundException e) {
+			log.debug("Transaction [{}]: Trainer workload not found, creating new one", command.getTransactionId());
 			TrainerWorkload newWorkload = trainerWorkloadFactory.createFrom(command);
 			log.info("Transaction [{}]: Created new trainer workload for username: {}", command.getTransactionId(),
 			        command.getUsername());
 			return newWorkload;
+		} catch (Exception e) {
+			log.error("Transaction [{}]: Error finding trainer workload: {}", command.getTransactionId(),
+			        e.getMessage(), e);
+			throw new RuntimeException("Failed to retrieve trainer workload", e);
 		}
 	}
 
@@ -71,6 +92,9 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 		trainerWorkload.setFirstName(command.getFirstName());
 		trainerWorkload.setLastName(command.getLastName());
 		trainerWorkload.setIsActive(command.getIsActive());
+
+		log.debug("Transaction [{}]: Updated personal info for trainer: {}", command.getTransactionId(),
+		        command.getUsername());
 	}
 
 	private void updateTrainerWorkloadDuration(TrainerWorkload trainerWorkload, ProcessTrainerWorkloadCommand command) {
@@ -79,11 +103,14 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 		int month = trainingDate.getMonthValue();
 		int duration = command.getTrainingDuration();
 
-		YearWorkload yearWorkload = findOrCreateYearWorkload(trainerWorkload, year);
+		updateMonthlyWorkload(trainerWorkload, year, month, duration, command);
+	}
 
+	private void updateMonthlyWorkload(TrainerWorkload trainerWorkload, int year, int month, int duration,
+	        ProcessTrainerWorkloadCommand command) {
+		YearWorkload yearWorkload = findOrCreateYearWorkload(trainerWorkload, year);
 		MonthWorkload monthWorkload = findOrCreateMonthWorkload(yearWorkload, month);
 
-		// Calculate new duration based on action type
 		int newDuration = calculateNewDuration(monthWorkload.getSummaryDuration(), duration, command);
 		monthWorkload.setSummaryDuration(newDuration);
 
@@ -98,6 +125,10 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 				log.debug("Transaction [{}]: Added {} minutes to current duration {}", command.getTransactionId(),
 				        duration, currentDuration);
 				return newDuration;
+			case UPDATE :
+				log.debug("Transaction [{}]: Updated duration from {} to {}", command.getTransactionId(),
+				        currentDuration, duration);
+				return duration;
 			case DELETE :
 				int reducedDuration = Math.max(0, currentDuration - duration);
 				log.debug("Transaction [{}]: Deleted {} minutes from current duration {}. Resulting duration: {}",
@@ -115,6 +146,9 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 			log.warn("Transaction [{}]: Trainer workload not found for username: {}. Returning empty workload.",
 			        transactionId, username);
 			return null;
+		} catch (Exception e) {
+			log.error("Transaction [{}]: Error retrieving trainer workload: {}", transactionId, e.getMessage(), e);
+			throw new RuntimeException("Failed to retrieve trainer workload", e);
 		}
 	}
 
@@ -124,7 +158,6 @@ public class TrainerWorkloadService implements ProcessTrainerWorkloadUseCase, Lo
 
 	private TrainerMonthlyWorkload buildTrainerMonthlyWorkload(TrainerWorkload trainerWorkload, String username,
 	        int year, int month, String transactionId) {
-
 		int summaryDuration = findMonthlyWorkloadDuration(trainerWorkload, year, month, transactionId);
 
 		TrainerMonthlyWorkload response = TrainerMonthlyWorkload.builder().username(username)
