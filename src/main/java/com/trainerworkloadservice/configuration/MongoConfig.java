@@ -11,21 +11,21 @@ import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
 
 @Configuration
 public class MongoConfig {
-    @Bean
-    @Primary
-    public MongoClient mongoClient() {
-        return MongoClients.create("mongodb://localhost:27017");
-    }
-    
-    @Bean
-    @Primary
-    public MongoDatabaseFactory mongoDatabaseFactory() {
-        return new SimpleMongoClientDatabaseFactory(mongoClient(), "disabled_db");
-    }
+	@Bean
+	@Primary
+	public MongoClient mongoClient() {
+		return MongoClients.create("mongodb://localhost:27017");
+	}
 
-    @Primary
-    @Bean(name = "mongoTemplate")
-    public MongoTemplate mongoTemplate() {
-        return new MongoTemplate(mongoDatabaseFactory());
-    }
+	@Bean
+	@Primary
+	public MongoDatabaseFactory mongoDatabaseFactory() {
+		return new SimpleMongoClientDatabaseFactory(mongoClient(), "disabled_db");
+	}
+
+	@Primary
+	@Bean(name = "mongoTemplate")
+	public MongoTemplate mongoTemplate() {
+		return new MongoTemplate(mongoDatabaseFactory());
+	}
 }

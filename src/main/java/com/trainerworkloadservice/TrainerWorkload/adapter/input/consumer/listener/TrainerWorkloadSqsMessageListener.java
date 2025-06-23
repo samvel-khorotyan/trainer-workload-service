@@ -1,5 +1,6 @@
 package com.trainerworkloadservice.TrainerWorkload.adapter.input.consumer.listener;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trainerworkloadservice.TrainerWorkload.adapter.output.queue.message.TrainerWorkloadMessage;
 import com.trainerworkloadservice.TrainerWorkload.adapter.output.queue.message.TrainerWorkloadResponseMessage;
 import com.trainerworkloadservice.TrainerWorkload.adapter.output.queue.sender.MessageSender;
@@ -7,17 +8,16 @@ import com.trainerworkloadservice.TrainerWorkload.application.port.input.LoadTra
 import com.trainerworkloadservice.TrainerWorkload.application.port.input.ProcessTrainerWorkloadUseCase;
 import com.trainerworkloadservice.TrainerWorkload.domain.ActionType;
 import com.trainerworkloadservice.TrainerWorkload.domain.TrainerMonthlyWorkload;
-import com.trainerworkloadservice.configuration.messaging.JmsConfig;
+import io.awspring.cloud.messaging.listener.annotation.SqsListener;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
-import org.springframework.jms.annotation.JmsListener;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class TrainerWorkloadMessageListener {
+public class TrainerWorkloadSqsMessageListener {
 	private static final String USERNAME_REQUIRED = "Username is required";
 	private static final String ACTION_TYPE_REQUIRED = "Action type is required";
 	private static final String TRAINING_DURATION_NEGATIVE = "Training duration cannot be negative";
@@ -31,30 +31,41 @@ public class TrainerWorkloadMessageListener {
 	private final ProcessTrainerWorkloadUseCase processTrainerWorkloadUseCase;
 	private final LoadTrainerMonthlyWorkloadUseCase loadTrainerMonthlyWorkloadUseCase;
 	private final MessageSender messageSender;
+	private final ObjectMapper objectMapper;
 
-	@JmsListener(destination = JmsConfig.TRAINER_WORKLOAD_QUEUE)
-	public void handleWorkloadMessage(TrainerWorkloadMessage message) {
-		String transactionId = message.getTransactionId();
-		log.info("Transaction [{}]: Received workload message for trainer: {}, action: {}", transactionId,
-		        message.getUsername(), message.getActionType());
+	@SqsListener("${aws.sqs.trainer-workload-queue}")
+	public void handleWorkloadMessage(String messageBody) {
+		log.info("Received SQS message: {}", messageBody);
 
 		try {
+			TrainerWorkloadMessage message = objectMapper.readValue(messageBody, TrainerWorkloadMessage.class);
+			String transactionId = message.getTransactionId();
+
+			log.info("Transaction [{}]: Received workload message for trainer: {}, action: {}", transactionId,
+			        message.getUsername(), message.getActionType());
+
 			validateMessage(message);
 			processMessageByActionType(message, transactionId);
+
+		} catch (Exception e) {
+			log.error("Error processing SQS message: {}", e.getMessage(), e);
+			// Handle parsing errors - could send to DLQ if needed
+		}
+	}
+
+	private void processMessageByActionType(TrainerWorkloadMessage message, String transactionId) {
+		try {
+			if (isModifyingAction(message.getActionType())) {
+				processModifyingAction(message, transactionId);
+			} else if (ActionType.GET.equals(message.getActionType())) {
+				processGetAction(message, transactionId);
+			}
 		} catch (IllegalArgumentException e) {
 			log.error("Transaction [{}]: Invalid message: {}", transactionId, e.getMessage());
 			messageSender.sendToDeadLetterQueue(message, VALIDATION_ERROR_PREFIX + e.getMessage());
 		} catch (Exception e) {
 			log.error("Transaction [{}]: Error processing workload message: {}", transactionId, e.getMessage(), e);
 			messageSender.sendToDeadLetterQueue(message, PROCESSING_ERROR_PREFIX + e.getMessage());
-		}
-	}
-
-	private void processMessageByActionType(TrainerWorkloadMessage message, String transactionId) {
-		if (isModifyingAction(message.getActionType())) {
-			processModifyingAction(message, transactionId);
-		} else if (ActionType.GET.equals(message.getActionType())) {
-			processGetAction(message, transactionId);
 		}
 	}
 

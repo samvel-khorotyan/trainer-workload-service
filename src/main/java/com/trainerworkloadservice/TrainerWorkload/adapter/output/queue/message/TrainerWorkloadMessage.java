@@ -1,6 +1,7 @@
 package com.trainerworkloadservice.TrainerWorkload.adapter.output.queue.message;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.trainerworkloadservice.TrainerWorkload.application.port.input.ProcessTrainerWorkloadCommand;
 import com.trainerworkloadservice.TrainerWorkload.domain.ActionType;
 import java.time.LocalDate;
@@ -23,7 +24,10 @@ public class TrainerWorkloadMessage {
 	private LocalDate trainingDate;
 
 	private Integer trainingDuration;
+
+	@JsonProperty("action_type")
 	private ActionType actionType;
+
 	private Integer year;
 	private Integer month;
 	private String transactionId;
