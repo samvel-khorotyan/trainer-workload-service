@@ -16,13 +16,21 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class TrainerWorkloadMessage {
 	private String username;
+
+	@JsonProperty("first_name")
 	private String firstName;
+
+	@JsonProperty("last_name")
 	private String lastName;
+
+	@JsonProperty("is_active")
 	private Boolean isActive;
 
+	@JsonProperty("training_date")
 	@JsonFormat(pattern = "yyyy-MM-dd")
 	private LocalDate trainingDate;
 
+	@JsonProperty("training_duration")
 	private Integer trainingDuration;
 
 	@JsonProperty("action_type")
@@ -30,6 +38,8 @@ public class TrainerWorkloadMessage {
 
 	private Integer year;
 	private Integer month;
+
+	@JsonProperty("transaction_id")
 	private String transactionId;
 
 	public ProcessTrainerWorkloadCommand toCommand(String transactionId) {
