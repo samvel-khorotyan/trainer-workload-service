@@ -1,3 +1,4 @@
+# trainer-workload-service/Dockerfile
 # ---------- Build Stage ----------
 FROM eclipse-temurin:17-jdk-alpine AS build
 
@@ -22,16 +23,17 @@ WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 
 # AWS SDK requires CA certificates
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates curl
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8081/actuator/health || exit 1
 
 # Environment Variables
 ENV AWS_REGION=eu-north-1
 ENV AWS_SQS_TRAINER_WORKLOAD_QUEUE=trainer-workload-queue
 ENV AWS_SQS_TRAINER_WORKLOAD_RESPONSE_QUEUE=trainer-workload-response-queue
 ENV AWS_SQS_DEAD_LETTER_QUEUE=dead-letter-queue
-
-# Persistence Configuration
-ENV APP_PERSISTENCE_MODE=mock
 
 EXPOSE 8081
 
@@ -41,5 +43,5 @@ ENTRYPOINT ["java", \
   "-Daws.sqs.trainer-workload-queue=${AWS_SQS_TRAINER_WORKLOAD_QUEUE}", \
   "-Daws.sqs.trainer-workload-response-queue=${AWS_SQS_TRAINER_WORKLOAD_RESPONSE_QUEUE}", \
   "-Daws.sqs.dead-letter-queue=${AWS_SQS_DEAD_LETTER_QUEUE}", \
-  "-Dapp.persistence.mode=${APP_PERSISTENCE_MODE}", \
   "-jar", "app.jar"]
+  

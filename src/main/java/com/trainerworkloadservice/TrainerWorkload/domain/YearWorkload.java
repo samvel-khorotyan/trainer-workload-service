@@ -13,6 +13,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class YearWorkload {
 	private Integer year;
+
 	@Builder.Default
 	private List<MonthWorkload> months = new ArrayList<>();
 }

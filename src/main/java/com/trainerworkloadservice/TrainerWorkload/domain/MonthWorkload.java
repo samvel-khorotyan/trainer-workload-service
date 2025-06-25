@@ -11,5 +11,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class MonthWorkload {
 	private Integer month;
-	private Integer summaryDuration;
+
+	@Builder.Default
+	private Integer summaryDuration = 0;
 }
