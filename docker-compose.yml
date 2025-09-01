@@ -12,6 +12,36 @@ services:
       - MONGO_INITDB_ROOT_USERNAME=admin
       - MONGO_INITDB_ROOT_PASSWORD=password
       - MONGO_INITDB_DATABASE=trainer_workload
+    networks:
+      - trainer_workload_network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/trainer_workload --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  trainer-workload-service:
+    build: .
+    container_name: trainer-workload-service
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATA_MONGODB_URI=mongodb://admin:password@trainer-workload-mongodb:27017/trainer_workload
+      - SPRING_DATA_MONGODB_DATABASE=trainer_workload
+      - SPRING_ACTIVEMQ_BROKER_URL=tcp://activemq:61616
+      - SPRING_ACTIVEMQ_USER=admin
+      - SPRING_ACTIVEMQ_PASSWORD=admin
+    depends_on:
+      - mongodb
+    networks:
+      - trainer_workload_network
+      - app_common_network
 
 volumes:
   mongodb_data:
+
+networks:
+  trainer_workload_network:
+    driver: bridge
+  app_common_network:
+    external: true
